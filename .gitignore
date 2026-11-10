@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# VS Code local settings
+.vscode/
+
+# Windows system files
+desktop.ini
+Thumbs.db
