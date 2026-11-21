@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "432425358041",
+    "project_id": "gaitsense-8e675",
+    "storage_bucket": "gaitsense-8e675.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:432425358041:android:900680ced701b26c48a4c8",
+        "android_client_info": {
+          "package_name": "com.example.gaitsense"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD86zAraFAnl9D4MxIRgjO4TNgOP-3fFj4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
