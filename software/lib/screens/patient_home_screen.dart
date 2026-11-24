@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/monitoring_service.dart';
+import '../models/monitoring_session.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -14,6 +16,8 @@ class PatientHomeScreen extends StatefulWidget {
 class _PatientHomeScreenState extends State<PatientHomeScreen> {
   int _selectedIndex = 0;
   late final Future<Map<String, dynamic>?> _profileFuture;
+
+  final MonitoringService _monitoringService = MonitoringService();
 
   static const _titles = ['Overview', 'Sessions', 'Device', 'Profile'];
 
@@ -154,6 +158,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       case 0:
         return _OverviewPage(
           name: name,
+          monitoringService: _monitoringService,
           onOpenSessions: () {
             setState(() => _selectedIndex = 1);
           },
@@ -162,7 +167,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           },
         );
       case 1:
-        return const _SessionsPage();
+        return _SessionsPage(monitoringService: _monitoringService);
       case 2:
         return const _DevicePage();
       case 3:
@@ -417,11 +422,13 @@ class _TopBar extends StatelessWidget {
 
 class _OverviewPage extends StatelessWidget {
   final String name;
+  final MonitoringService monitoringService;
   final VoidCallback onOpenSessions;
   final VoidCallback onOpenDevice;
 
   const _OverviewPage({
     required this.name,
+    required this.monitoringService,
     required this.onOpenSessions,
     required this.onOpenDevice,
   });
@@ -453,47 +460,42 @@ class _OverviewPage extends StatelessWidget {
         const SizedBox(height: 24),
         const _SectionTitle('Activity overview'),
         const SizedBox(height: 14),
+        const Text(
+          'Demonstration data — not actual patient recordings.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            final twoColumns = constraints.maxWidth >= 570;
-
-            if (twoColumns) {
-              return const Row(
-                children: [
-                  Expanded(
-                    child: _MetricCard(
-                      title: 'Freezing events',
-                      icon: Icons.directions_walk_rounded,
-                    ),
-                  ),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: _MetricCard(
-                      title: 'Walking sessions',
-                      icon: Icons.calendar_today_outlined,
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            return const Column(
-              children: [
-                _MetricCard(
-                  title: 'Freezing events',
-                  icon: Icons.directions_walk_rounded,
-                ),
-                SizedBox(height: 12),
-                _MetricCard(
-                  title: 'Walking sessions',
-                  icon: Icons.calendar_today_outlined,
-                ),
-              ],
+            final eventsCard = _MetricCard(
+              title: 'Movement events',
+              value: monitoringService.totalMovementEvents.toString(),
+              icon: Icons.directions_walk_rounded,
             );
+            final sessionsCard = _MetricCard(
+              title: 'Monitoring sessions',
+              value: monitoringService.totalSessions.toString(),
+              icon: Icons.calendar_today_outlined,
+            );
+            if (constraints.maxWidth >= 570) {
+              return Row(children: [
+                Expanded(child: eventsCard),
+                const SizedBox(width: 14),
+                Expanded(child: sessionsCard),
+              ]);
+            }
+            return Column(children: [
+              eventsCard,
+              const SizedBox(height: 12),
+              sessionsCard,
+            ]);
           },
         ),
         const SizedBox(height: 24),
-        _RecentActivity(onOpenSessions: onOpenSessions),
+        _RecentActivity(
+          onOpenSessions: onOpenSessions,
+          monitoringService: monitoringService,
+        ),
       ],
     );
   }
@@ -570,9 +572,10 @@ class _DeviceHero extends StatelessWidget {
 
 class _MetricCard extends StatelessWidget {
   final String title;
+  final String value;
   final IconData icon;
 
-  const _MetricCard({required this.title, required this.icon});
+  const _MetricCard({required this.title, required this.value, required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -592,9 +595,9 @@ class _MetricCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '—',
-                  style: TextStyle(
+                Text(
+                  value,
+                  style: const TextStyle(
                     fontSize: 29,
                     fontWeight: FontWeight.w800,
                     color: AppColors.midnight,
@@ -618,11 +621,16 @@ class _MetricCard extends StatelessWidget {
 
 class _RecentActivity extends StatelessWidget {
   final VoidCallback onOpenSessions;
+  final MonitoringService monitoringService;
 
-  const _RecentActivity({required this.onOpenSessions});
+  const _RecentActivity({
+    required this.onOpenSessions,
+    required this.monitoringService,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final sessions = monitoringService.getRecentSessions();
     return _WhiteCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -630,20 +638,17 @@ class _RecentActivity extends StatelessWidget {
           Row(
             children: [
               const Expanded(child: _SectionTitle('Recent sessions')),
-              TextButton(
-                onPressed: onOpenSessions,
-                child: const Text('View all'),
-              ),
+              TextButton(onPressed: onOpenSessions, child: const Text('View all')),
             ],
           ),
-          const SizedBox(height: 30),
-          const _EmptyState(
-            icon: Icons.event_note_outlined,
-            title: 'No sessions recorded',
-            description:
-                'Your walking sessions will appear here when monitoring data is available.',
-          ),
-          const SizedBox(height: 24),
+          if (sessions.isEmpty)
+            const _EmptyState(
+              icon: Icons.event_note_outlined,
+              title: 'No sessions recorded',
+              description: 'Monitoring sessions will appear here.',
+            )
+          else
+            for (final session in sessions) _SessionTile(session: session),
         ],
       ),
     );
@@ -651,31 +656,102 @@ class _RecentActivity extends StatelessWidget {
 }
 
 class _SessionsPage extends StatelessWidget {
-  const _SessionsPage();
+  final MonitoringService monitoringService;
+
+  const _SessionsPage({required this.monitoringService});
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    final sessions = monitoringService.getSessions();
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _Eyebrow('ACTIVITY HISTORY'),
-        SizedBox(height: 8),
-        _PageHeading(
-          title: 'Walking sessions',
-          subtitle: 'Review your recorded monitoring sessions.',
+        const _Eyebrow('ACTIVITY HISTORY'),
+        const SizedBox(height: 8),
+        const _PageHeading(
+          title: 'Monitoring sessions',
+          subtitle: 'Review your monitoring session history.',
         ),
-        SizedBox(height: 24),
+        const SizedBox(height: 12),
+        const Text('Demonstration data — not actual patient recordings.',
+          style: TextStyle(color: AppColors.textSecondary)),
+        const SizedBox(height: 24),
         _WhiteCard(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 45),
-            child: _EmptyState(
-              icon: Icons.history_rounded,
-              title: 'No sessions available',
-              description:
-                  'Recorded sessions will appear here once your wearable begins sending data.',
-            ),
+          child: sessions.isEmpty
+              ? const _EmptyState(
+                  icon: Icons.history_rounded,
+                  title: 'No sessions available',
+                  description: 'Monitoring sessions will appear here.',
+                )
+              : Column(children: [
+                  for (final session in sessions) _SessionTile(session: session),
+                ]),
+        ),
+      ],
+    );
+  }
+}
+
+class _SessionTile extends StatelessWidget {
+  final MonitoringSession session;
+
+  const _SessionTile({required this.session});
+
+  String _dateTime(BuildContext context, DateTime value) {
+    final local = value.toLocal();
+    final strings = MaterialLocalizations.of(context);
+    return '${strings.formatMediumDate(local)} · ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+  }
+
+  void _showDetails(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Session details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (session.isSimulated)
+                const Text('Simulated session — not a patient recording.'),
+              const SizedBox(height: 16),
+              Text('Session ID: ${session.id}'),
+              const SizedBox(height: 12),
+              Text('Started: ${_dateTime(context, session.startTime)}'),
+              const SizedBox(height: 12),
+              Text('Ended: ${_dateTime(context, session.endTime)}'),
+              const SizedBox(height: 12),
+              Text('Duration: ${session.formattedDuration}'),
+              const SizedBox(height: 12),
+              Text('Movement events: ${session.movementEventCount}'),
+            ],
           ),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.directions_walk_rounded, color: AppColors.teal),
+          title: Text(_dateTime(context, session.startTime)),
+          subtitle: Text(
+            '${session.formattedDuration} · ${session.movementEventCount} movement events'
+            '${session.isSimulated ? ' · Simulated' : ''}',
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _showDetails(context),
+        ),
+        const Divider(height: 1),
       ],
     );
   }
